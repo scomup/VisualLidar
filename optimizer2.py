@@ -7,13 +7,19 @@ from scipy.spatial.transform import Rotation
 from reprojection import depth2pts
 from scipy.interpolate import griddata
 
-import numpy as np
-from scipy.spatial.transform import Rotation
+# The cost function is defined as
+# fi = Dr(C(x)pt_i)/C(x)pt_i  - 1
+# where：
+# pt_i: The point i observed by camera A
+# C(x) = K*T(x): Camera projection matrix
+# K: intrinsics matrix
+# T(x): Transform matrix for target to reference camera
+# x: 6DoF transform parameter
+# Dr: The depth image from reference camera
+#
 
 epsilon = 1e-5
 
-
-    
 # so3 to 3d Rotation Matrix
 def exp(v):
     theta_sq = np.dot(v, v)
@@ -33,17 +39,14 @@ def exp(v):
     rot = Rotation.from_quat(quat)
     return rot.as_dcm()
 
-try:
-    sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
-except:
-    pass
-
 def getMatrix(x):
     M = np.eye(4)
     M[0:3,3] = x[0:3]
-    M[0:3, 0:3] = exp(x[3:6])
+    M[0:3,0:3] = exp(x[3:6])
     return M
     
+
+
 class esm:
     def __init__(self, ref_depth, tar_depth):
         self.H, self.W = ref_depth.shape
@@ -54,62 +57,63 @@ class esm:
         pts = depth2pts(tar_depth, self.K)
         self.tar_pts = np.ones((4, pts.shape[1]))
         self.tar_pts[0:3, :] = pts
-        #self.tar_pts = self.tar_pts[:,0:2]
+
         #self.ref_dxdy = self.image_gradient(self.ref_depth)
         self.T = np.eye(4)
-        self.T[0,3] = 2
-        self.T[0,3] = -2
-        self.T[1,3] = 1.3
-        self.T[0:3,0:3] = exp([0.1,0.4,-0.3])
-        #self.T[1,3] = 0.2
+        #self.T[0,3] = 0.01
         #self.T[0,3] = 0.2
-        #self.T[1,3] = 4
-        #self.T[2,3] = 4
+        self.T[0:3,0:3] = exp([0.05,0,0])
         self.last_err = np.inf
-        iter = 0
         self.calc_Jg()
-        pix =  np.dot(self.K, self.tar_pts[0:3,:])
-        pix /= pix[2,:]
-        pix = pix[0:2,:]
-        pix = pix.T.reshape(-1)
-
+        iter = 0
         while(True):
+            
             pts_trans = np.dot(self.T, self.tar_pts)
+            self.calc_Jw(pts_trans)
             reproj_pix =  np.dot(self.K, pts_trans[0:3,:])
             reproj_pix /= reproj_pix[2,:]
-            reproj_pix = reproj_pix[0:2,:]
-            reproj_pix = reproj_pix.T.reshape(-1)
+            reproj_pix[0] = np.around(reproj_pix[0])
+            reproj_pix[1] = np.around(reproj_pix[1])
+            reproj_pix = reproj_pix.astype(int)
 
+            check = np.logical_and(np.logical_and(
+                reproj_pix[0] < self.W - 2, reproj_pix[0] > 2),
+                np.logical_and(reproj_pix[1] < self.H - 1, reproj_pix[1] > 2))
+
+            d = pts_trans[2, check]
             self.calc_Jw(pts_trans)
-            residuals = reproj_pix - pix
-            err = np.sqrt(np.nansum(residuals*residuals)/(residuals.shape[0]))
-            #err, residuals = self.residuals(self.ref_depth, reproj_pix, d)
+            Jw = self.Jw[check, :, :]
+
+            reproj_pix = reproj_pix[0:2, check]
+
+            err, residuals = self.residuals(self.ref_depth, reproj_pix, d)
             print("iter:%d, err:%f"%(iter,err))
             iter+=1
             if  err < 0.01:
                 print("OK!")
+                print(self.T)
                 break
 
-            JwJg = np.matmul(self.Jw, self.Jg)
+            Ji = self.image_gradient(reproj_pix)
+            Ji = np.nan_to_num(Ji)
+            JwJg = np.matmul(Jw, self.Jg)
+            JiJwJg = np.matmul(Ji, JwJg)
+            JwJg2 = np.matmul(self.Jw2[check, :, :], self.Jg)
 
-            J = JwJg
+            #J = JiJwJg - JwJg2
+            J = JiJwJg
 
-            #self.last_err = err
+
+            self.last_err = err
 
             J = J.reshape(-1,6)
             hessian = np.dot(J.T,J)
             hessian_inv = np.linalg.inv(hessian)
             temp = -np.dot(J.T, residuals)
             dx = np.dot(hessian_inv,temp)
-            #self.T[0,3] += dx[0]
-            #self.T[1,3] += dx[1]
-            #self.T[2,3] += dx[2]
-
             #print(self.T)
             dT = getMatrix(dx)
-            #print(self.T)
             self.T = np.dot(self.T, dT) 
-
 
     def calc_Jg(self):
         A1 = np.array([0, 0, 0, 1,  0, 0, 0, 0,  0, 0, 0, 0. ]).reshape([3,4])
@@ -126,6 +130,7 @@ class esm:
             A6.flatten()]).T
 
 
+
     def residuals(self, depth, pix, d):
         residuals = depth[pix[1], pix[0]] - d
         residuals = np.nan_to_num(residuals)
@@ -133,6 +138,8 @@ class esm:
         return np.sqrt(m/(d.shape[0])), residuals
 
     def image_gradient(self, pix):
+
+        #dx = np.roll(img,-1,axis=1) - img
         dx = (self.ref_depth[pix[1], pix[0] + 1] - self.ref_depth[pix[1], pix[0]]).reshape(-1,1,1)
         dy = (self.ref_depth[pix[1] + 1, pix[0]] - self.ref_depth[pix[1], pix[0]]).reshape(-1,1,1)
         return np.dstack([dx,dy])
@@ -167,7 +174,12 @@ class esm:
         self.Jw[:,1, 9] = -fy*y2/z2
         self.Jw[:,1,10] = -fy*y/z
         self.Jw[:,1,11] = -fy*y/z2
-        
+
+        self.Jw2 = np.zeros([self.tar_pts.shape[1], 1, 12])
+        self.Jw2[:,0, 8] = x
+        self.Jw2[:,0, 9] = y
+        self.Jw2[:,0,10] = z
+        self.Jw2[:,0,11] = 1
 
     
 if __name__ == "__main__":

@@ -7,10 +7,16 @@ from scipy.spatial.transform import Rotation
 from reprojection import depth2pts
 from scipy.interpolate import griddata
 
-try:
-    sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
-except:
-    pass
+# The cost function is defined as
+# fi = Dr(C(x)pt_i) - C(x)pt_i
+# where：
+# pt_i: The point i observed by camera A
+# C(x) = K*T(x): Camera projection matrix
+# K: intrinsics matrix
+# T(x): Transform matrix for target to reference camera
+# x: 6DoF transform parameter
+# Dr: The depth image from reference camera
+#
 
 epsilon = 1e-5
 
