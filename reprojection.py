@@ -2,7 +2,6 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 import matplotlib.pyplot as plt
 
-depth = np.load('/Users/liuyang/workspace/ViusalLidar/depth/0000.npy')
 K = np.array([[718.,0, 607], [0, 718, 185], [0,0,1]])
 
 def getT(x, y, z, roll, pitch, yaw):
