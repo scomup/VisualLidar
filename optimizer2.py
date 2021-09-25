@@ -2,50 +2,21 @@
 
 import matplotlib.pyplot as plt
 import numpy as np
-import sys
-from scipy.spatial.transform import Rotation
 from reprojection import depth2pts
-from scipy.interpolate import griddata
 
-# The cost function is defined as
-# fi = Dr(C(x)pt_i)/C(x)pt_i  - 1
-# where：
-# pt_i: The point i observed by camera A
-# C(x) = K*T(x): Camera projection matrix
-# K: intrinsics matrix
-# T(x): Transform matrix for target to reference camera
-# x: 6DoF transform parameter
-# Dr: The depth image from reference camera
-#
+from math_tools import v2T
 
-epsilon = 1e-5
-
-# so3 to 3d Rotation Matrix
-def exp(v):
-    theta_sq = np.dot(v, v)
-    imag_factor = 0.
-    real_factor = 0.
-    if (theta_sq < epsilon * epsilon):
-        theta_po4 = theta_sq * theta_sq
-        imag_factor = 0.5 - (1.0 / 48.0) * theta_sq + (1.0 / 3840.0) * theta_po4
-        real_factor = 1. - (1.0 / 8.0) * theta_sq +   (1.0 / 384.0) * theta_po4
-    else:
-        theta = np.sqrt(theta_sq)
-        half_theta = 0.5 * theta
-        sin_half_theta = np.sin(half_theta)
-        imag_factor = sin_half_theta / theta
-        real_factor = np.cos(half_theta)
-    quat = np.array([imag_factor*v[0], imag_factor*v[1], imag_factor*v[2], real_factor])
-    rot = Rotation.from_quat(quat)
-    return rot.as_dcm()
-
-def getMatrix(x):
-    M = np.eye(4)
-    M[0:3,3] = x[0:3]
-    M[0:3,0:3] = exp(x[3:6])
-    return M
-    
-
+"""
+The cost function is defined as
+fi = Dr(C(x)pt_i) - C(x)pt_i
+where：
+pt_i: The point i observed by camera A
+C(x) = K*T(x): Camera projection matrix
+K: intrinsics matrix
+T(x): Transform matrix for target to reference camera
+x: 6DoF transform parameter
+Dr: The depth image from reference camera
+"""
 
 class esm:
     def __init__(self, ref_depth, tar_depth):
