@@ -62,6 +62,25 @@ def projection(K, pts):
     pix = pix.astype(int)
     return pix
 
+def reprojection_error_image(ref_depth, tar_depth, T, K):
+    tar_pts = depth2pts(tar_depth, K)
+    tar_pts = tar_pts[:, np.argsort(tar_pts[2])]
+    tar_pts = tar_pts[:,::-1]
+    ref_pts = transform(T, tar_pts)
+    pix = projection(K, ref_pts)
+    d = ref_pts[2,:]
+    r = ref_depth[pix[1], pix[0]] - d
+    e = np.sqrt(r*r)
+    error_image = np.zeros_like(ref_depth)
+    reproj_image = np.zeros_like(ref_depth)
+    reproj_image.fill(np.nan)
+    error_image.fill(np.nan)
+    error_image[pix[1], pix[0]] = e
+    reproj_image[pix[1], pix[0]] = d
+    return error_image, reproj_image
+
+
+
 def range_check(pix, H, W):
     b = 1
     check = np.logical_and(np.logical_and(

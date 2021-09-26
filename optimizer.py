@@ -17,16 +17,22 @@ x: 6DoF transform parameter
 Dr: The depth image from reference camera
 """
 
-class esm:
-    def __init__(self, ref_depth, tar_depth, K):
-        self.H, self.W = ref_depth.shape
-        self.K = K
-        self.ref_depth = ref_depth
+class DepthMatcher:
+    def __init__(self, ref_depht, tar_depth, K, max_err = 3):
+        self.ref_depth = ref_depht
         self.tar_depth = tar_depth
-        self.tar_pts = depth2pts(tar_depth, self.K)
-        self.T = v2T([0,0,1,0,0,0])
-        self.last_err = np.inf
-        dTdx = self.calc_dTdx()
+        self.H, self.W = ref_depth.shape
+        self.tar_pts = depth2pts(tar_depth, K)
+        self.K = K
+        self.max_err = max_err
+        self.T = v2T([0,0,0,0,0,0])
+        self.dTdx = self.calc_dTdx()
+
+    def track(self):
+        #self.img0, self.img1 = reprojection_error_image(self.ref_depth, self.tar_depth, self.T, self.K)
+        #return
+
+        last_err = np.inf
         iter = 0
         while(True):
             #transform the target points to reference coordinate
@@ -52,20 +58,15 @@ class esm:
                 print("OK!")
                 print(self.T)
                 break
-            if err > self.last_err:
-                e = np.sqrt(residuals*residuals)
-                img = np.zeros_like(self.ref_depth)
-                img[reproj_pix[1],reproj_pix[0]] = e
-                plt.imshow(img)
-                plt.show()
-
+            if err > last_err:
+                self.img0, self.img1 = reprojection_error_image(self.ref_depth, self.tar_depth, self.T, self.K)
                 break
 
             #Calcate the jacobian
-            dDdC = self.calc_dDdC(reproj_pix)
-            dCdx = np.matmul(dCdT, dTdx)
+            dDdC = self.calc_dDdC(self.ref_depth, reproj_pix)
+            dCdx = np.matmul(dCdT, self.dTdx)
             dDdx = np.matmul(dDdC, dCdx)
-            dtzdx = np.matmul(dtzdT, dTdx)
+            dtzdx = np.matmul(dtzdT, self.dTdx)
             #J = dDdx - dtzdx
             J = dDdx
 
@@ -77,7 +78,7 @@ class esm:
             dx = np.dot(hessian_inv,temp)
             dT = v2T(dx)
             self.T = np.dot(self.T, dT) 
-            self.last_err = err
+            last_err = err
 
     def calc_dTdx(self):
         A1 = np.array([0, 0, 0, 1,  0, 0, 0, 0,  0, 0, 0, 0. ]).reshape([3,4])
@@ -97,12 +98,13 @@ class esm:
     def residuals(self, depth, pix, reproj_depth):
         residuals = depth[pix[1], pix[0]] - reproj_depth
         residuals = np.nan_to_num(residuals)
+        residuals = np.clip(residuals, -self.max_err, self.max_err)
         m = np.nansum(residuals*residuals)
         return np.sqrt(m/(reproj_depth.shape[0])), residuals
 
-    def calc_dDdC(self, pix):
-        dx = (self.ref_depth[pix[1], pix[0] + 1] - self.ref_depth[pix[1], pix[0]]).reshape(-1,1,1)
-        dy = (self.ref_depth[pix[1] + 1, pix[0]] - self.ref_depth[pix[1], pix[0]]).reshape(-1,1,1)
+    def calc_dDdC(self, depth, pix):
+        dx = (depth[pix[1], pix[0] + 1] - depth[pix[1], pix[0]]).reshape(-1,1,1)
+        dy = (depth[pix[1] + 1, pix[0]] - depth[pix[1], pix[0]]).reshape(-1,1,1)
         dDdC = np.nan_to_num(np.dstack([dx,dy]))
         return dDdC
 
@@ -151,6 +153,17 @@ if __name__ == "__main__":
     ref_depth = np.load('/Users/liuyang/workspace/VisualLidar/depth/0000.npy')
     tar_depth = np.load('/Users/liuyang/workspace/VisualLidar/depth/0001.npy')
     K = np.array([[718.,0, 607], [0, 718, 185], [0,0,1]])
-    esm = esm(ref_depth, tar_depth, K) #x,y,weight,height
-    #esm.track(tar_depth, False)
+    max_err = 2
+    matcher = DepthMatcher(ref_depth, tar_depth, K, max_err) 
+    matcher.track()
+    fig, axes= plt.subplots(4)
+    axes[0].imshow(matcher.img0, vmin=0, vmax=max_err)
+    axes[0].set_title('reproj error',loc='left')
+    axes[1].imshow(matcher.img1, vmin=0, vmax=30)
+    axes[1].set_title('tar reproj to ref depth')
+    axes[2].imshow(ref_depth, vmin=0, vmax=30)
+    axes[2].set_title('ref depth')
+    axes[3].imshow(tar_depth, vmin=0, vmax=30)
+    axes[3].set_title('tar depth')
+    print(matcher.T)
     plt.show()
