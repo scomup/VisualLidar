@@ -2,12 +2,12 @@
 
 import matplotlib.pyplot as plt
 import numpy as np
-from common import v2T, depth2pts, transform, projection, range_check
+from common import *
 
 """
 The cost function is defined as
 fi = Dr(C(x)pt_i) - tz(x)pt_i
-where：
+where:
 pt_i: The point i observed by camera A
 C(x) = K*T(x): Camera projection matrix
 K: intrinsics matrix
@@ -31,31 +31,45 @@ class esm:
         while(True):
             #transform the target points to reference coordinate
             cur_pts = transform(self.T, self.tar_pts)
-            #projection points to camera
+            #Projection points to camera
             reproj_pix =  projection(self.K, cur_pts)
             #Make sure all points are located inside the camera boundaries
             check = range_check(reproj_pix, self.H, self.W)
+            #check = random_mask(check, 1000)
             cur_pts = cur_pts[:,check]
             reproj_pix = reproj_pix[:,check]
 
-            d = cur_pts[2]
+            #Calcate the partial derivative
             dCdT = self.calc_dCdT(cur_pts)
             dtzdT = self.calc_dtzdT(cur_pts)
-            err, residuals = self.residuals(self.ref_depth, reproj_pix, d)
-
+            #Calcate the residuals
+            reproj_depth = cur_pts[2]
+            err, residuals = self.residuals(self.ref_depth, reproj_pix, reproj_depth)
+            
             print("iter:%d, err:%f"%(iter,err))
             iter+=1
             if  err < 0.01:
                 print("OK!")
                 print(self.T)
                 break
+            if err > self.last_err:
+                e = np.sqrt(residuals*residuals)
+                img = np.zeros_like(self.ref_depth)
+                img[reproj_pix[1],reproj_pix[0]] = e
+                plt.imshow(img)
+                plt.show()
 
+                break
+
+            #Calcate the jacobian
             dDdC = self.calc_dDdC(reproj_pix)
             dCdx = np.matmul(dCdT, dTdx)
             dDdx = np.matmul(dDdC, dCdx)
             dtzdx = np.matmul(dtzdT, dTdx)
+            #J = dDdx - dtzdx
+            J = dDdx
 
-            J = dDdx - dtzdx
+            #Gauss-nowton method
             J = J.reshape(-1,6)
             hessian = np.dot(J.T,J)
             hessian_inv = np.linalg.inv(hessian)
@@ -80,11 +94,11 @@ class esm:
             A6.flatten()]).T
         return dTdx
 
-    def residuals(self, depth, pix, d):
-        residuals = depth[pix[1], pix[0]] - d
+    def residuals(self, depth, pix, reproj_depth):
+        residuals = depth[pix[1], pix[0]] - reproj_depth
         residuals = np.nan_to_num(residuals)
         m = np.nansum(residuals*residuals)
-        return np.sqrt(m/(d.shape[0])), residuals
+        return np.sqrt(m/(reproj_depth.shape[0])), residuals
 
     def calc_dDdC(self, pix):
         dx = (self.ref_depth[pix[1], pix[0] + 1] - self.ref_depth[pix[1], pix[0]]).reshape(-1,1,1)
@@ -135,7 +149,7 @@ class esm:
     
 if __name__ == "__main__":
     ref_depth = np.load('/Users/liuyang/workspace/VisualLidar/depth/0000.npy')
-    tar_depth = np.load('/Users/liuyang/workspace/VisualLidar/depth/0000.npy')
+    tar_depth = np.load('/Users/liuyang/workspace/VisualLidar/depth/0001.npy')
     K = np.array([[718.,0, 607], [0, 718, 185], [0,0,1]])
     esm = esm(ref_depth, tar_depth, K) #x,y,weight,height
     #esm.track(tar_depth, False)

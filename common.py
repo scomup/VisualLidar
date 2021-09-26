@@ -20,7 +20,7 @@ def v2R(v):
         real_factor = np.cos(half_theta)
     quat = np.array([imag_factor*v[0], imag_factor*v[1], imag_factor*v[2], real_factor])
     rot = Rotation.from_quat(quat)
-    return rot.as_dcm()
+    return rot.as_matrix()
 
 def v2T(x):
     M = np.eye(4)
@@ -68,3 +68,12 @@ def range_check(pix, H, W):
         pix[0] < W - b, pix[0] > b),
         np.logical_and(pix[1] < H - b, pix[1] > b))
     return check
+
+def random_mask(check, num):
+    mask_size = check.shape[0]
+    if(mask_size < num):
+        return check
+    mask = np.zeros(mask_size, dtype=bool)
+    idx = np.random.choice(np.arange(mask_size)[check],num,replace=False)
+    mask[idx] = True
+    return mask
