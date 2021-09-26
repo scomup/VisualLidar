@@ -18,20 +18,19 @@ Dr: The depth image from reference camera
 """
 
 class DepthMatcher:
-    def __init__(self, ref_depht, tar_depth, K, max_err = 3):
+    def __init__(self, ref_depht, tar_depth, K):
         self.ref_depth = ref_depht
         self.tar_depth = tar_depth
         self.H, self.W = ref_depth.shape
         self.tar_pts = depth2pts(tar_depth, K)
         self.K = K
-        self.max_err = max_err
         self.T = v2T([0,0,0,0,0,0])
         self.dTdx = self.calc_dTdx()
 
-    def track(self):
+    def track(self, max_err=np.inf):
+        self.max_err = max_err
         #self.img0, self.img1 = reprojection_error_image(self.ref_depth, self.tar_depth, self.T, self.K)
         #return
-
         last_err = np.inf
         iter = 0
         while(True):
@@ -59,6 +58,7 @@ class DepthMatcher:
                 print(self.T)
                 break
             if err > last_err:
+                self.T = self.last_T
                 self.img0, self.img1 = reprojection_error_image(self.ref_depth, self.tar_depth, self.T, self.K)
                 break
 
@@ -67,8 +67,8 @@ class DepthMatcher:
             dCdx = np.matmul(dCdT, self.dTdx)
             dDdx = np.matmul(dDdC, dCdx)
             dtzdx = np.matmul(dtzdT, self.dTdx)
-            #J = dDdx - dtzdx
-            J = dDdx
+            J = dDdx - dtzdx
+            #J = dDdx
 
             #Gauss-nowton method
             J = J.reshape(-1,6)
@@ -77,6 +77,7 @@ class DepthMatcher:
             temp = -np.dot(J.T, residuals)
             dx = np.dot(hessian_inv,temp)
             dT = v2T(dx)
+            self.last_T = self.T
             self.T = np.dot(self.T, dT) 
             last_err = err
 
@@ -153,17 +154,12 @@ if __name__ == "__main__":
     ref_depth = np.load('/Users/liuyang/workspace/VisualLidar/depth/0000.npy')
     tar_depth = np.load('/Users/liuyang/workspace/VisualLidar/depth/0001.npy')
     K = np.array([[718.,0, 607], [0, 718, 185], [0,0,1]])
-    max_err = 2
-    matcher = DepthMatcher(ref_depth, tar_depth, K, max_err) 
-    matcher.track()
-    fig, axes= plt.subplots(4)
-    axes[0].imshow(matcher.img0, vmin=0, vmax=max_err)
+    matcher = DepthMatcher(ref_depth, tar_depth, K) 
+    matcher.track(3)
+    fig, axes= plt.subplots(2)
+    axes[0].imshow(matcher.img0, vmin=0, vmax=3)
     axes[0].set_title('reproj error',loc='left')
     axes[1].imshow(matcher.img1, vmin=0, vmax=30)
     axes[1].set_title('tar reproj to ref depth')
-    axes[2].imshow(ref_depth, vmin=0, vmax=30)
-    axes[2].set_title('ref depth')
-    axes[3].imshow(tar_depth, vmin=0, vmax=30)
-    axes[3].set_title('tar depth')
     print(matcher.T)
     plt.show()

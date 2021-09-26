@@ -68,6 +68,9 @@ def reprojection_error_image(ref_depth, tar_depth, T, K):
     tar_pts = tar_pts[:,::-1]
     ref_pts = transform(T, tar_pts)
     pix = projection(K, ref_pts)
+    check = range_check(pix,ref_depth.shape[0],ref_depth.shape[1])
+    ref_pts = ref_pts[:,check]
+    pix = pix[:,check]
     d = ref_pts[2,:]
     r = ref_depth[pix[1], pix[0]] - d
     e = np.sqrt(r*r)
