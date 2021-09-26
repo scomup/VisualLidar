@@ -29,10 +29,12 @@ class esm:
         dTdx = self.calc_dTdx()
         iter = 0
         while(True):
+            #transform the target points to reference coordinate
             cur_pts = transform(self.T, self.tar_pts)
+            #projection points to camera
             reproj_pix =  projection(self.K, cur_pts)
+            #Make sure all points are located inside the camera boundaries
             check = range_check(reproj_pix, self.H, self.W)
-
             cur_pts = cur_pts[:,check]
             reproj_pix = reproj_pix[:,check]
 
@@ -40,6 +42,7 @@ class esm:
             dCdT = self.calc_dCdT(cur_pts)
             dtzdT = self.calc_dtzdT(cur_pts)
             err, residuals = self.residuals(self.ref_depth, reproj_pix, d)
+
             print("iter:%d, err:%f"%(iter,err))
             iter+=1
             if  err < 0.01:
@@ -53,18 +56,14 @@ class esm:
             dtzdx = np.matmul(dtzdT, dTdx)
 
             J = dDdx - dtzdx
-
-
-            self.last_err = err
-
             J = J.reshape(-1,6)
             hessian = np.dot(J.T,J)
             hessian_inv = np.linalg.inv(hessian)
             temp = -np.dot(J.T, residuals)
             dx = np.dot(hessian_inv,temp)
-            #print(self.T)
             dT = v2T(dx)
             self.T = np.dot(self.T, dT) 
+            self.last_err = err
 
     def calc_dTdx(self):
         A1 = np.array([0, 0, 0, 1,  0, 0, 0, 0,  0, 0, 0, 0. ]).reshape([3,4])
