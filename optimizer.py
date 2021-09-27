@@ -8,7 +8,7 @@ from common import *
 The cost function is defined as
 fi = Dr(C(x)pt_i) - tz(x)pt_i
 where:
-pt_i: The point i observed by camera A
+pt_i: The point i observed by tar camera
 C(x) = K*T(x): Camera projection matrix
 K: intrinsics matrix
 T(x): Transform matrix for target to reference camera
@@ -27,6 +27,9 @@ class DepthMatcher:
         self.dTdx = self.calc_dTdx()
         self.border = 2
 
+    def setT(self, T):
+        self.T = T
+
     def track(self, max_err=np.inf, sampling = 1, remove_outlier = False):
 
         ref_depth = self.ref_depth
@@ -36,7 +39,9 @@ class DepthMatcher:
         H = self.H
 
         tar_pts = depth2pts(tar_depth, K ,sampling)
-        #tar_pts = tar_pts[:,np.random.choice(tar_pts.shape[1],100000,replace=False)]
+        num = 0
+        if(num != 0 and tar_pts.shape[1] > num):
+            tar_pts = tar_pts[:,np.random.choice(tar_pts.shape[1],num,replace=False)]
         self.max_err = max_err
         last_err = np.inf
         iter = 0
@@ -50,20 +55,23 @@ class DepthMatcher:
             cur_pts = cur_pts[:,check]
             reproj_pix = reproj_pix[:,check]
             reproj_d = cur_pts[2]
+
+            #Calcate the residuals
+            err, residuals, _, _ = self.residuals(ref_depth, reproj_pix, reproj_d)
+
             #check inlier
             if(remove_outlier):
-                mask = self.inlier(ref_depth, reproj_pix, reproj_d)
+                mask = np.where(np.abs(residuals) < self.max_err)[0]
                 cur_pts = cur_pts[:,mask]
                 reproj_pix = reproj_pix[:,mask]
                 reproj_d = cur_pts[2]
+                err, residuals, _, _ = self.residuals(ref_depth, reproj_pix, reproj_d)
 
             #Calcate the partial derivative
             dCdT = self.calc_dCdT(K, cur_pts)
             dtzdT = self.calc_dtzdT(cur_pts)
-            #Calcate the residuals
-            err, residuals, _, _ = self.residuals(ref_depth, reproj_pix, reproj_d)
-            
-            print("iter:%d, err:%f"%(iter,err))
+
+            #print("iter:%d, err:%f"%(iter,err))
             iter+=1
             if  err < 0.01:
                 print("OK!")
@@ -123,12 +131,23 @@ class DepthMatcher:
             reproj_image[pix[1], pix[0]] = reproj_d
         return e/(residuals.shape[0]), residuals, error_image, reproj_image
 
-    def inlier(self, depth, pix, reproj_d):
-        residuals = depth[pix[1], pix[0]] - reproj_d
-        residuals = np.nan_to_num(residuals)
-        residuals = np.clip(residuals, -self.max_err, self.max_err)
-        r = np.abs(residuals)
-        return np.where(r < self.max_err)[0]
+    def get_good_pts(self, color, sampling = 1):
+        tar_pts = depth2pts(self.tar_depth, self.K, sampling)
+        cur_pts = transform(self.T, tar_pts)
+        pix =  projection(self.K, cur_pts)
+        check = range_check(pix, self.H, self.W)
+        cur_pts = cur_pts[:,check]
+        reproj_d = cur_pts[2]
+        pix = pix[:,check]
+        _, residuals, _, _ = self.residuals(self.ref_depth, pix, reproj_d)
+        mask = np.where(np.abs(residuals) < 0.3)[0]
+        pts = tar_pts[:,check]
+        pts = pts[:, mask]
+        pix = pix[:,mask]
+        c = color[pix[1],pix[0]].T
+        pts = np.vstack([pts, c])
+        return pts
+
 
 
     def calc_dDdC(self, depth, pix):
@@ -187,8 +206,10 @@ if __name__ == "__main__":
     cy = 172.854
     K = np.array([[fx,0, cx], [0, fy, cy], [0,0,1]])
     matcher = DepthMatcher(ref_depth, tar_depth, K) 
+    matcher.setT(v2T([0,0,1,0,0,0]))
     matcher.track(max_err=3, sampling=4)
     matcher.track(max_err=1, sampling=2, remove_outlier=True)
+    pts = matcher.get_good_pts()
     fig, axes= plt.subplots(3)
     axes[0].imshow(matcher.img0, vmin=0, vmax=3)
     axes[0].set_title('reproj error',loc='left')
@@ -214,6 +235,7 @@ if __name__ == "__main__":
         c = np.zeros_like(tar_pts.T)
         c[:,1] = 1
         pcd1.colors = o3d.utility.Vector3dVector(c)
-        o3d.visualization.draw_geometries([pcd0,pcd1])
+        o3d.visualization.draw_geometries([pcd0, pcd1])
+    
 
     plt.show()

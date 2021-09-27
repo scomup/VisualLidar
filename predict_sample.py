@@ -14,7 +14,7 @@ from models.bgnet_plus import BGNet_Plus
 import open3d as o3d
 import matplotlib.pyplot as plt
 
-path = '/media/liu/SSD-PSMU3/kitti_slam/03/'
+path = '/media/liu/SSD-PSMU3/kitti_slam/00/'
 model = BGNet_Plus().cuda()
 
 checkpoint = torch.load('models/Sceneflow-IRS-BGNet-Plus.pth',map_location=lambda storage, loc: storage)
