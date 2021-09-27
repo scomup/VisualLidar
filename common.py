@@ -28,23 +28,22 @@ def v2T(x):
     M[0:3,0:3] = v2R(x[3:6])
     return M
 
-def depth2pts(depth, K):
-    H, W = depth.shape
-    x = np.linspace(0, W - 1, W)
-    y = np.linspace(0, H - 1, H)
+def depth2pts(depth, K, sampling = 1):
+    assert type(sampling) == int, "Incorrect sampling data"
+
+    H, W = depth.shape 
+    x = np.arange(0, W - 1, sampling)
+    y = np.arange(0, H - 1, sampling)
+    N = x.shape[0] * y.shape[0]
     x, y = np.meshgrid(x, y)
-    pts = np.ones((3, W * H), dtype=np.float32)
-    d = depth.flatten()
+    pts = np.ones((3, N), dtype=np.float32)
+    d = depth[y,x].flatten()
     pts[0, :] = x.flatten()
     pts[1, :] = y.flatten()
     Kinv = np.linalg.inv(K)
     ptsn = np.matmul(Kinv, pts)
-    Xn = np.reshape(ptsn[0, :], newshape=(H, W))
-    Yn = np.reshape(ptsn[1, :], newshape=(H, W))
-    pts3d = np.ones((3, W * H), dtype=np.float32)
-    pts3d[0, :] = (d*Xn.flatten())
-    pts3d[1, :] = (d*Yn.flatten())
-    pts3d[2, :] = depth.flatten()
+    pts3d = np.ones((3, N), dtype=np.float32)
+    pts3d = ptsn * d
     pts3d = pts3d[:, np.logical_not(np.isnan(pts3d[2, :]))]
     return pts3d
 
@@ -82,13 +81,10 @@ def reprojection_error_image(ref_depth, tar_depth, T, K):
     reproj_image[pix[1], pix[0]] = d
     return error_image, reproj_image
 
-
-
-def range_check(pix, H, W):
-    b = 1
+def range_check(pix, H, W, border=1):
     check = np.logical_and(np.logical_and(
-        pix[0] < W - b, pix[0] > b),
-        np.logical_and(pix[1] < H - b, pix[1] > b))
+        pix[0] < W - border, pix[0] > border),
+        np.logical_and(pix[1] < H - border, pix[1] > border))
     return check
 
 def random_mask(check, num):

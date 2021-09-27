@@ -16,7 +16,6 @@ import matplotlib.pyplot as plt
 
 path = '/media/liu/SSD-PSMU3/kitti_slam/03/'
 model = BGNet_Plus().cuda()
-max_depth = 30
 
 checkpoint = torch.load('models/Sceneflow-IRS-BGNet-Plus.pth',map_location=lambda storage, loc: storage)
 model.load_state_dict(checkpoint) 
@@ -55,12 +54,22 @@ for i in range(len(left_fn)):
     left_img_tensor = preprocess(np.ascontiguousarray(left_img, dtype=np.float32))
     right_img_tensor = preprocess(np.ascontiguousarray(right_img, dtype=np.float32))
     pred,_ = model(left_img_tensor.unsqueeze(0).cuda(), right_img_tensor.unsqueeze(0).cuda()) 
-    pred = pred[0].data.cpu().numpy()
-    depth = 0.54 * 721 / pred
+    pred = pred[None, :, :]
+    pred = torch.nn.functional.interpolate(pred, (h, w), mode='nearest')
+    pred = pred[0, 0].data.cpu().numpy()
+
+    fx = 721.538
+    fy = 721.538
+    cx = 609.559
+    cy = 172.854
+    baseline = 0.54
+    max_depth = 30
+    depth = baseline * fx / pred
     depth =  np.where(depth > max_depth, nan, depth)
 
+
     """
-    color = o3d.geometry.Image(np.array(left_img_color)) # numpy配列から変換
+    color = o3d.geometry.Image(np.array(left_img_color))
     depth = o3d.geometry.Image(depth.astype(np.float32))
     rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(color, depth, convert_rgb_to_intensity=False)
     pinhole_camera_intrinsic = o3d.camera.PinholeCameraIntrinsic(w, h, 718, 718, 607, 185)
@@ -68,7 +77,7 @@ for i in range(len(left_fn)):
     pcd.transform([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
     o3d.visualization.draw_geometries([pcd])
     """
-    np.save('/home/liu/workspace/ViusalLidar/depth/%04d'%i, depth)
+    np.save('/home/liu/workspace/VisualLidar/depth/%04d'%i, depth)
 
     plt.cla()
     ax.imshow(depth, cmap="rainbow")
