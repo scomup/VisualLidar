@@ -82,23 +82,28 @@ if __name__ == "__main__":
                   [0, 0, 1, 0],
                   [0, -1, 0, 0], 
                   [0, 0, 0, 1]])
-    map_points = np.zeros([4,1])
+    lmap = []
     while not rospy.is_shutdown():
         if(i > 800):
             break
-        print('process image: %d'%i)
+        #print('process image: %d'%i)
         dT = np.load('/home/liu/workspace/VisualLidar/mapping/T/T_%04d.npy'%i)
         pts = np.load('/home/liu/workspace/VisualLidar/mapping/pts/pts_%04d.npy'%i)
         mask = np.arange(0, pts.shape[1] - 1, 10)
         pts = pts[:, mask]
-        curT = np.matmul(curT, dT)
+        curT = np.matmul(curT, np.linalg.inv(dT))
         color = pts[3:6, :]
         pts_t = transform(np.matmul(V, curT),pts[0:3,:])
         points = get_rgbd_points(pts_t, color)
-        map_points = np.hstack([map_points, points])
-        if(i%10 == 0):
+        #map_points = np.hstack([map_points, points])
+        lmap.append(points)
+        if(i%5 == 0):
+            map_points = np.hstack(lmap)
+            print('process image: %d'%i)
+            print(map_points.shape)
             msg = get_points_msg(map_points)
             pub.publish(msg)
+            lmap.clear()
             r.sleep()
         i += 1
     

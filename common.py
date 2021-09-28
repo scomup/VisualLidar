@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.spatial.transform import Rotation
+import scipy.interpolate 
 
 epsilon = 1e-5
 
@@ -47,6 +48,15 @@ def depth2pts(depth, K, sampling = 1):
     pts3d = pts3d[:, np.logical_not(np.isnan(pts3d[2, :]))]
     return pts3d
 
+def interpn(img, pix):
+    x = pix[0,:]
+    y = pix[1,:]
+    out_image = scipy.interpolate.interpn((range(img.shape[0]),
+                        range(img.shape[1])),
+                        img,
+                        (y, x))
+    return out_image
+
 def transform(T, pts):
     ptshd = np.ones((4, pts.shape[1]))
     ptshd[0:3, :] = pts        
@@ -56,9 +66,6 @@ def transform(T, pts):
 def projection(K, pts):
     pix =  np.dot(K, pts)
     pix /= pix[2,:]
-    pix[0] = np.around(pix[0])
-    pix[1] = np.around(pix[1])
-    pix = pix.astype(int)
     return pix
 
 def reprojection_error_image(ref_depth, tar_depth, T, K):
@@ -71,12 +78,16 @@ def reprojection_error_image(ref_depth, tar_depth, T, K):
     ref_pts = ref_pts[:,check]
     pix = pix[:,check]
     d = ref_pts[2,:]
-    r = ref_depth[pix[1], pix[0]] - d
+    r = interpn(ref_depth, pix) - d
     e = np.sqrt(r*r)
     error_image = np.zeros_like(ref_depth)
     reproj_image = np.zeros_like(ref_depth)
     reproj_image.fill(np.nan)
     error_image.fill(np.nan)
+    pix[0] = np.around(pix[0])
+    pix[1] = np.around(pix[1])
+    pix = pix.astype(int)
+
     error_image[pix[1], pix[0]] = e
     reproj_image[pix[1], pix[0]] = d
     return error_image, reproj_image

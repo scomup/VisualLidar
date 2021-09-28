@@ -6,48 +6,49 @@ from common import *
 
 """
 The cost function is defined as
-fi = Dr(C(x)pt_i) - tz(x)pt_i
+fi = Dt(C(x)pt_i) - tz(x)pr_i
 where:
-pt_i: The point i observed by tar camera
+pt_i: The point i observed by ref camera
 C(x) = K*T(x): Camera projection matrix
 K: intrinsics matrix
-T(x): Transform matrix for target to reference camera
+T(x): Transform matrix for reference to target camera
 tz(x): the z(3rd) row of T
 x: 6DoF transform parameter
-Dr: The depth image from reference camera
+Dt: The depth image from target camera
 """
 
 class DepthMatcher:
-    def __init__(self, ref_depth, tar_depth, K):
-        self.ref_depth = ref_depth
+    def __init__(self, ref_depth, tar_depth, K, show_log = False):
         self.tar_depth = tar_depth
-        self.H, self.W = ref_depth.shape
+        self.ref_depth = ref_depth
+        self.H, self.W = tar_depth.shape
         self.K = K
         self.T = v2T([0,0,0,0,0,0])
         self.dTdx = self.calc_dTdx()
         self.border = 2
+        self.show_log = show_log
 
     def setT(self, T):
         self.T = T
 
     def track(self, max_err=np.inf, sampling = 1, remove_outlier = False):
-
-        ref_depth = self.ref_depth
+        
         tar_depth = self.tar_depth
+        ref_depth = self.ref_depth
         K = self.K
         W = self.W
         H = self.H
 
-        tar_pts = depth2pts(tar_depth, K ,sampling)
-        num = 0
-        if(num != 0 and tar_pts.shape[1] > num):
-            tar_pts = tar_pts[:,np.random.choice(tar_pts.shape[1],num,replace=False)]
+        ref_pts = depth2pts(ref_depth, K ,sampling)
+        num = 50000
+        if(num != 0 and ref_pts.shape[1] > num):
+            ref_pts = ref_pts[:,np.random.choice(ref_pts.shape[1],num,replace=False)]
         self.max_err = max_err
         last_err = np.inf
         iter = 0
         while(True):
-            #transform the target points to reference coordinate
-            cur_pts = transform(self.T, tar_pts)
+            #transform the reference points to target coordinate
+            cur_pts = transform(self.T, ref_pts)
             #Projection points to camera
             reproj_pix =  projection(K, cur_pts)
             #Make sure all points are located inside the camera boundaries
@@ -57,7 +58,7 @@ class DepthMatcher:
             reproj_d = cur_pts[2]
 
             #Calcate the residuals
-            err, residuals, _, _ = self.residuals(ref_depth, reproj_pix, reproj_d)
+            err, residuals = self.residuals(tar_depth, reproj_pix, reproj_d)
 
             #check inlier
             if(remove_outlier):
@@ -65,31 +66,30 @@ class DepthMatcher:
                 cur_pts = cur_pts[:,mask]
                 reproj_pix = reproj_pix[:,mask]
                 reproj_d = cur_pts[2]
-                err, residuals, _, _ = self.residuals(ref_depth, reproj_pix, reproj_d)
+                err, residuals = self.residuals(tar_depth, reproj_pix, reproj_d)
 
             #Calcate the partial derivative
             dCdT = self.calc_dCdT(K, cur_pts)
             dtzdT = self.calc_dtzdT(cur_pts)
-
-            #print("iter:%d, err:%f"%(iter,err))
+            if(self.show_log):
+                print("iter:%d, err:%f"%(iter,err))
             iter+=1
             if  err < 0.01:
-                print("OK!")
-                print(self.T)
                 break
             if err > last_err:
                 self.T = self.last_T
-                #_, _, self.img0, self.img1 = self.residuals(self.ref_depth, reproj_pix, reproj_d, True)
-                self.img0, self.img1 = reprojection_error_image(ref_depth, tar_depth, self.T, K)
+                #_, _, self.img0, self.img1 = self.get_proj_err_image(self.tar_depth, reproj_pix, reproj_d)
+                self.img0, self.img1 = reprojection_error_image(tar_depth, ref_depth, self.T, K)
                 break
 
             #Calcate the jacobian
-            dDdC = self.calc_dDdC(ref_depth, reproj_pix)
+            dDdC = self.calc_dDdC(tar_depth, reproj_pix)
             dCdx = np.matmul(dCdT, self.dTdx)
             dDdx = np.matmul(dDdC, dCdx)
             dtzdx = np.matmul(dtzdT, self.dTdx)
             J = dDdx - dtzdx
-
+            #J = dDdx
+            residuals = residuals * sampling
             #Gauss-nowton method
             J = J.reshape(-1,6)
             hessian = np.dot(J.T,J)
@@ -116,32 +116,40 @@ class DepthMatcher:
             A6.flatten()]).T
         return dTdx
 
-    def residuals(self, depth, pix, reproj_d, get_proj_err_image = False):
-        residuals = depth[pix[1], pix[0]] - reproj_d
+    def residuals(self, depth, pix, reproj_d):
+        residuals = interpn(depth, pix) - reproj_d
         residuals = np.nan_to_num(residuals)
         residuals = np.clip(residuals, -self.max_err, self.max_err)
         r = np.abs(residuals)
         e = np.nansum(r)
         error_image = np.zeros_like(depth)
         reproj_image = np.zeros_like(depth)
-        if(get_proj_err_image):
-            reproj_image.fill(np.nan)
-            error_image.fill(np.nan)
-            error_image[pix[1], pix[0]] = r
-            reproj_image[pix[1], pix[0]] = reproj_d
-        return e/(residuals.shape[0]), residuals, error_image, reproj_image
+        return e/(residuals.shape[0]), residuals
+
+    def get_proj_err_image(self, depth, pix, reproj_d):
+        residuals = interpn(depth, pix) - reproj_d
+        residuals = np.nan_to_num(residuals)
+        residuals = np.clip(residuals, -self.max_err, self.max_err)
+        r = np.abs(residuals)
+        error_image = np.zeros_like(depth)
+        reproj_image = np.zeros_like(depth)
+        reproj_image.fill(np.nan)
+        error_image.fill(np.nan)
+        error_image[pix[1], pix[0]] = r
+        reproj_image[pix[1], pix[0]] = reproj_d
+        return error_image, reproj_image
 
     def get_good_pts(self, color, sampling = 1):
-        tar_pts = depth2pts(self.tar_depth, self.K, sampling)
-        cur_pts = transform(self.T, tar_pts)
+        ref_pts = depth2pts(self.ref_depth, self.K, sampling)
+        cur_pts = transform(self.T, ref_pts)
         pix =  projection(self.K, cur_pts)
         check = range_check(pix, self.H, self.W)
         cur_pts = cur_pts[:,check]
         reproj_d = cur_pts[2]
         pix = pix[:,check]
-        _, residuals, _, _ = self.residuals(self.ref_depth, pix, reproj_d)
+        _, residuals, = self.residuals(self.tar_depth, pix, reproj_d)
         mask = np.where(np.abs(residuals) < 0.3)[0]
-        pts = tar_pts[:,check]
+        pts = ref_pts[:,check]
         pts = pts[:, mask]
         pix = pix[:,mask]
         c = color[pix[1],pix[0]].T
@@ -151,9 +159,16 @@ class DepthMatcher:
 
 
     def calc_dDdC(self, depth, pix):
-        dx = (depth[pix[1], pix[0] + 1] - depth[pix[1], pix[0]]).reshape(-1,1,1)
-        dy = (depth[pix[1] + 1, pix[0]] - depth[pix[1], pix[0]]).reshape(-1,1,1)
-        dDdC = np.nan_to_num(np.dstack([dx,dy]))
+        pix_x1y0 = pix.copy()
+        pix_x1y0[0] = pix_x1y0[0] + 1.
+        pix_x0y1 = pix.copy()
+        pix_x0y1[1] = pix_x0y1[1] + 1.
+        x0y0 = interpn(depth, pix)
+        x1y0 = interpn(depth, pix_x1y0)
+        x0y1 = interpn(depth, pix_x0y1)
+        dx = x1y0 - x0y0
+        dy = x0y1 - x0y0
+        dDdC = np.nan_to_num(np.dstack([dx.reshape(-1,1),dy.reshape(-1,1)]))
         return dDdC
 
     def calc_dCdT(self, K, pts):
@@ -198,24 +213,24 @@ class DepthMatcher:
 
     
 if __name__ == "__main__":
-    ref_depth = np.load('/home/liu/workspace/VisualLidar/depth/0000.npy')
-    tar_depth = np.load('/home/liu/workspace/VisualLidar/depth/0001.npy')
+    tar_depth = np.load('/home/liu/workspace/VisualLidar/depth/0000.npy')
+    ref_depth = np.load('/home/liu/workspace/VisualLidar/depth/0001.npy')
+    
     fx = 721.538
     fy = 721.538
     cx = 609.559
     cy = 172.854
     K = np.array([[fx,0, cx], [0, fy, cy], [0,0,1]])
-    matcher = DepthMatcher(ref_depth, tar_depth, K) 
-    matcher.setT(v2T([0,0,1,0,0,0]))
-    matcher.track(max_err=3, sampling=4)
-    matcher.track(max_err=1, sampling=2, remove_outlier=True)
-    pts = matcher.get_good_pts()
+    matcher = DepthMatcher(tar_depth, ref_depth, K, True) 
+    matcher.setT(v2T([0,0,0,0,0,0]))
+    matcher.track(max_err=5, sampling=4)
+    matcher.track(max_err=1, sampling=1, remove_outlier=True)
     fig, axes= plt.subplots(3)
     axes[0].imshow(matcher.img0, vmin=0, vmax=3)
     axes[0].set_title('reproj error',loc='left')
     axes[1].imshow(matcher.img1, vmin=0, vmax=30)
     axes[1].set_title('tar reproj to ref depth',loc='left')
-    axes[2].imshow(matcher.ref_depth, vmin=0, vmax=30)
+    axes[2].imshow(matcher.tar_depth, vmin=0, vmax=30)
     axes[2].set_title('truth ref depth',loc='left')
 
     print(matcher.T)
@@ -223,16 +238,16 @@ if __name__ == "__main__":
     if(True):
         import open3d as o3d
         pcd0 = o3d.geometry.PointCloud()
-        ref_pts = depth2pts(ref_depth, K)
-        pcd0.points = o3d.utility.Vector3dVector(ref_pts.T)
-        c = np.zeros_like(ref_pts.T)
+        tar_pts = depth2pts(tar_depth, K)
+        pcd0.points = o3d.utility.Vector3dVector(tar_pts.T)
+        c = np.zeros_like(tar_pts.T)
         c[:,2] = 1
         pcd0.colors = o3d.utility.Vector3dVector(c)
         pcd1 = o3d.geometry.PointCloud()
-        tar_pts = depth2pts(tar_depth, K)
-        tar_pts = transform(matcher.T, tar_pts)
-        pcd1.points = o3d.utility.Vector3dVector(tar_pts.T)
-        c = np.zeros_like(tar_pts.T)
+        ref_pts = depth2pts(ref_depth, K)
+        ref_pts = transform(np.linalg.inv(matcher.T), ref_pts)
+        pcd1.points = o3d.utility.Vector3dVector(ref_pts.T)
+        c = np.zeros_like(ref_pts.T)
         c[:,1] = 1
         pcd1.colors = o3d.utility.Vector3dVector(c)
         o3d.visualization.draw_geometries([pcd0, pcd1])
