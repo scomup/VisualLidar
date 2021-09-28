@@ -122,8 +122,6 @@ class DepthMatcher:
         residuals = np.clip(residuals, -self.max_err, self.max_err)
         r = np.abs(residuals)
         e = np.nansum(r)
-        error_image = np.zeros_like(depth)
-        reproj_image = np.zeros_like(depth)
         return e/(residuals.shape[0]), residuals
 
     def get_proj_err_image(self, depth, pix, reproj_d):
@@ -152,6 +150,8 @@ class DepthMatcher:
         pts = ref_pts[:,check]
         pts = pts[:, mask]
         pix = pix[:,mask]
+        pix = np.around(pix)
+        pix = pix.astype(int)
         c = color[pix[1],pix[0]].T
         pts = np.vstack([pts, c])
         return pts
@@ -229,9 +229,9 @@ if __name__ == "__main__":
     axes[0].imshow(matcher.img0, vmin=0, vmax=3)
     axes[0].set_title('reproj error',loc='left')
     axes[1].imshow(matcher.img1, vmin=0, vmax=30)
-    axes[1].set_title('tar reproj to ref depth',loc='left')
+    axes[1].set_title('ref reproj to tar depth',loc='left')
     axes[2].imshow(matcher.tar_depth, vmin=0, vmax=30)
-    axes[2].set_title('truth ref depth',loc='left')
+    axes[2].set_title('tar depth',loc='left')
 
     print(matcher.T)
 

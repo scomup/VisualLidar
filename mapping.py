@@ -45,16 +45,16 @@ if __name__ == "__main__":
         pts = matcher.get_good_pts(left_img)
         np.save('/home/liu/workspace/VisualLidar/mapping/T/T_%04d'%i, matcher.T)
         np.save('/home/liu/workspace/VisualLidar/mapping/pts/pts_%04d'%i, pts)
-        if(False):
+        if(True):
             axes[0].cla()
             axes[1].cla()
             axes[2].cla()
             axes[0].imshow(matcher.img0, vmin=0, vmax=3)
             axes[0].set_title('reproj error',loc='left')
             axes[1].imshow(matcher.img1, vmin=0, vmax=30)
-            axes[1].set_title('tar reproj to ref depth',loc='left')
-            axes[2].imshow(matcher.ref_depth, vmin=0, vmax=30)
-            axes[2].set_title('truth ref depth',loc='left')
+            axes[1].set_title('ref reproj to tar depth',loc='left')
+            axes[2].imshow(matcher.tar_depth, vmin=0, vmax=30)
+            axes[2].set_title('tar depth',loc='left')
             plt.savefig('/home/liu/workspace/VisualLidar/mapping/img/%04d.png'%i)
             plt.pause(0.01)
     

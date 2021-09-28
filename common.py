@@ -84,8 +84,7 @@ def reprojection_error_image(ref_depth, tar_depth, T, K):
     reproj_image = np.zeros_like(ref_depth)
     reproj_image.fill(np.nan)
     error_image.fill(np.nan)
-    pix[0] = np.around(pix[0])
-    pix[1] = np.around(pix[1])
+    pix = np.around(pix)
     pix = pix.astype(int)
 
     error_image[pix[1], pix[0]] = e
