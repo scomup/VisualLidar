@@ -48,6 +48,46 @@ def depth2pts(depth, K, sampling = 1):
     pts3d = pts3d[:, np.logical_not(np.isnan(pts3d[2, :]))]
     return pts3d
 
+def getpts(depth, img, pix, K, sampling = 1):
+    assert type(sampling) == int, "Incorrect sampling data"
+    x = pix[0,:]
+    y = pix[1,:]
+    N = pix.shape[1]
+    i = img[y,x]
+    pts = np.ones((3, N), dtype=np.float32)
+    d = depth[y,x].flatten()
+    pts[0, :] = x.flatten()
+    pts[1, :] = y.flatten()
+    Kinv = np.linalg.inv(K)
+    ptsn = np.matmul(Kinv, pts)
+    pts3d = np.ones((4, N), dtype=np.float32)
+    pts3d[0:3,:] = ptsn * d
+    pts3d[3,:] = i.flatten()
+    pts3d = pts3d[:, np.logical_not(np.isnan(pts3d[2, :]))]
+    return pts3d
+
+
+def depth2ptsI(depth, img, K, sampling = 1):
+    assert type(sampling) == int, "Incorrect sampling data"
+
+    H, W = depth.shape 
+    x = np.arange(0, W - 1, sampling)
+    y = np.arange(0, H - 1, sampling)
+    N = x.shape[0] * y.shape[0]
+    x, y = np.meshgrid(x, y)
+    i = img[y,x]
+    pts = np.ones((3, N), dtype=np.float32)
+    d = depth[y,x].flatten()
+    pts[0, :] = x.flatten()
+    pts[1, :] = y.flatten()
+    Kinv = np.linalg.inv(K)
+    ptsn = np.matmul(Kinv, pts)
+    pts3d = np.ones((4, N), dtype=np.float32)
+    pts3d[0:3,:] = ptsn * d
+    pts3d[3,:] = i.flatten()
+    pts3d = pts3d[:, np.logical_not(np.isnan(pts3d[2, :]))]
+    return pts3d
+
 def interpn(img, pix):
     x = pix[0,:]
     y = pix[1,:]

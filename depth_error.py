@@ -17,7 +17,7 @@ x: 6DoF transform parameter
 Dt: The depth image from target camera
 """
 
-class DepthMatcher:
+class DepthError:
     def __init__(self, ref_depth, tar_depth, K, show_log = False):
         self.tar_depth = tar_depth
         self.ref_depth = ref_depth
@@ -221,7 +221,10 @@ if __name__ == "__main__":
     cx = 609.559
     cy = 172.854
     K = np.array([[fx,0, cx], [0, fy, cy], [0,0,1]])
-    matcher = DepthMatcher(tar_depth, ref_depth, K, True) 
+
+    map_pts = depth2pts(ref_depth, K ,4)
+
+    matcher = DepthError(tar_depth, ref_depth, K, True) 
     matcher.setT(v2T([0,0,0,0,0,0]))
     matcher.track(max_err=5, sampling=4)
     matcher.track(max_err=1, sampling=1, remove_outlier=True)

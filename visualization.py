@@ -2,7 +2,7 @@
 
 import numpy as np
 from common import *
-from optimizer import DepthMatcher
+from optimizer import DepthError
 import matplotlib.pyplot as plt
 import rospy
 import struct

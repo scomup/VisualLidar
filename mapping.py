@@ -2,7 +2,7 @@
 
 import numpy as np
 from common import *
-from optimizer import DepthMatcher
+from depth_error import DepthError
 import matplotlib.pyplot as plt
 from PIL import Image
 
@@ -37,7 +37,7 @@ if __name__ == "__main__":
         tar_depth = np.load(depth_fn[i])
         left_img = np.ascontiguousarray(Image.open(left_fn[i]))
 
-        matcher = DepthMatcher(ref_depth, tar_depth, K) 
+        matcher = DepthError(ref_depth, tar_depth, K) 
         matcher.setT(T)
         matcher.track(max_err=5, sampling=4)
         matcher.track(max_err=1, sampling=1, remove_outlier=True)
